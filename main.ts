@@ -1,52 +1,57 @@
-// ai-excited-01 entry program.
+// Skywhale Ride — entry program for the make.fun bounty ai-excited-01,
+// "Make the AI judge excited".
 //
-// The whole entry is a single picture, entry.png, sitting next to this file.
-// The grader runs this program in a bare container and reads exactly one
-// artifact afterwards: entry.png inside the output directory. So the job
-// here is deliberately small — carry the picture from the repository into
-// the output directory, untouched, byte for byte.
+// This entry is a single image, entry.png, stored right beside this file.
+// The program has one responsibility: deliver that image, unchanged, into
+// the output directory so it can be picked up and judged.
 //
-// Where the output directory is:
-//   - MAKEFUN_OUTPUT_DIR, when the caller sets it (local runs and tests);
-//   - /output otherwise, which is where the grader looks.
+// The output directory comes from the MAKEFUN_OUTPUT_DIR environment
+// variable when that variable is set; otherwise it defaults to /output.
+// The directory is created recursively when it does not exist yet.
 //
-// Node 22, standard library only, nothing to install.
+// Runtime: Node 22, standard library only, TypeScript run directly with
+// no build step and nothing to install.
 
 import { copyFileSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const sourcePath = join(here, 'entry.png');
+// Resolve the folder this file lives in, so the source image is found
+// relative to main.ts itself rather than the caller's working directory.
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const sourcePath = join(scriptDir, 'entry.png');
 
 const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-const targetPath = join(outputDir, 'entry.png');
+const destinationPath = join(outputDir, 'entry.png');
 
-// Fail early and plainly if the picture is missing: a silent success with
-// no artifact would score zero and say nothing about why.
-let sourceSize;
+// Guard against a missing source image. If entry.png is not beside this
+// file there is nothing to deliver, so say so plainly on stderr and exit
+// non-zero instead of crashing with a raw stack trace or, worse, quietly
+// producing no artifact at all.
+let sourceSize: number;
 try {
   sourceSize = statSync(sourcePath).size;
 } catch {
-  console.error(`error: source image not found at ${sourcePath}`);
+  console.error(`error: source image is missing: ${sourcePath}`);
   process.exit(1);
 }
 
-// The output directory is not guaranteed to exist on a local run, so make
-// it (and any parents) before writing into it.
+// Make sure the output directory exists before writing into it.
 mkdirSync(outputDir, { recursive: true });
 
-copyFileSync(sourcePath, targetPath);
+// Carry the image across byte for byte.
+copyFileSync(sourcePath, destinationPath);
 
-// Trust nothing about the copy: the file on disk afterwards must be exactly
-// as large as the source. A size mismatch means a truncated or corrupted
-// write, and the run must fail loudly rather than hand in a broken image.
-const targetSize = statSync(targetPath).size;
-if (targetSize !== sourceSize) {
+// Verify the copy after the fact: the delivered file must be exactly the
+// same size as the source. A short or padded file would mean the write was
+// truncated or corrupted, and handing that in silently would be worse than
+// failing, so any mismatch is a hard error with a non-zero exit.
+const deliveredSize = statSync(destinationPath).size;
+if (deliveredSize !== sourceSize) {
   console.error(
-    `error: copied file is ${targetSize} bytes but the source is ${sourceSize} bytes`,
+    `error: size mismatch — delivered file is ${deliveredSize} bytes, source is ${sourceSize} bytes`,
   );
   process.exit(1);
 }
 
-console.log(`entry.png delivered to ${targetPath} (${targetSize} bytes)`);
+console.log(`entry.png delivered: ${deliveredSize} bytes`);
